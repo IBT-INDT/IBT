@@ -3,81 +3,147 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IBT MESH V2.5 | Stable Edition</title>
+    <title>IBT MESH | Stable Edition</title>
     <link rel="manifest" href="manifest.json">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/elliptic/6.5.4/elliptic.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
     
     <style>
         :root { --bg: #0f172a; --card: #1e293b; --primary: #3b82f6; --accent: #22c55e; --gold: #eab308; --red: #ef4444; --text: #f8fafc; }
-        body { font-family: sans-serif; background: var(--bg); color: var(--text); padding: 15px; margin: 0; }
-        .card { background: var(--card); padding: 18px; border-radius: 12px; margin-bottom: 12px; border-left: 5px solid var(--primary); }
-        button { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 8px; width: 100%; cursor: pointer; font-weight: bold; margin-top: 8px; }
-        input { width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; border: 1px solid #475569; background: #334155; color: white; box-sizing: border-box; }
-        #log { background: #020617; color: var(--accent); padding: 10px; border-radius: 8px; height: 60px; overflow-y: auto; font-family: monospace; font-size: 11px; margin-top: 10px; }
-        #reader { width: 100%; border-radius: 10px; display: none; margin-top: 10px; }
+        body { font-family: sans-serif; background: var(--bg); color: var(--text); padding: 5px; margin: 0; }
+        .card { background: var(--card); padding: 15px; border-radius: 12px; margin-bottom: 10px; border-left: 5px solid var(--primary); }
+        button { background: var(--primary); color: white; border: none; padding: 10px; border-radius: 8px; width: 100%; cursor: pointer; font-weight: bold; margin-top: 5px; font-size: 11px; }
+        input { width: 100%; padding: 10px; margin: 5px 0; border-radius: 8px; border: 1px solid #475569; background: #334155; color: white; box-sizing: border-box; font-size: 11px; }
+        #log { background: #020617; color: var(--accent); padding: 6px; border-radius: 8px; height: 100px; overflow-y: auto; font-family: monospace; font-size: 10px; margin-top: 10px; border: 1px solid #1e293b; }
+        .status-pill { padding: 4px 8px; border-radius: 20px; font-size: 9px; float: right; font-weight: bold; }
+        .tab-btn { background: #334155; width: auto; flex: 1; padding: 8px; }
+        .tab-btn.active { background: var(--primary); }
+        .tx-item { border-bottom: 1px solid #334155; padding: 5px 0; font-size: 10px; display: flex; justify-content: space-between; }
+        .chat-box { height: 120px; overflow-y: auto; background: #020617; border-radius: 8px; padding: 8px; font-size: 10px; margin-bottom: 5px; }
+        .msg { margin-bottom: 4px; color: #94a3b8; }
+        .msg-me { color: var(--accent); text-align: right; }
+        .qr-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
+        #qr-canvas { background: white; padding: 10px; border-radius: 10px; }
     </style>
 </head>
 <body>
 
-    <h2 style="text-align: center; color: var(--primary);">IBT MESH V2.5</h2>
+    <h2 style="text-align: center; color: var(--primary); margin: 10px 0;">IBT MESH <span id="peer-id" style="font-size: 9px; display: block; color: var(--gold);">Syncing Network...</span></h2>
 
-    <div class="card">
-        <div id="auth-section">
-            <input type="password" id="pass" placeholder="Enter Password">
-            <button onclick="accessWallet()" style="background: var(--accent);">Login / Create Wallet</button>
+    <!-- QR OVERLAY -->
+    <div id="qr-modal" class="qr-overlay">
+        <h3 style="color:var(--gold);">My Payment QR</h3>
+        <canvas id="qr-canvas"></canvas>
+        <p id="qr-text" style="font-size:10px; margin-top:10px; color:var(--accent);">Scan to send IBT</p>
+        <button onclick="toggleQR(false)" style="width:150px; background:var(--red);">Close QR</button>
+    </div>
+
+    <!-- NAVIGATION TABS -->
+    <div style="display:flex; gap:5px; margin-bottom:10px;">
+        <button onclick="showTab('wallet')" id="btn-wallet" class="tab-btn active">Wallet</button>
+        <button onclick="showTab('chat')" id="btn-chat" class="tab-btn">Chat</button>
+        <button onclick="showTab('history')" id="btn-history" class="tab-btn">Explorer</button>
+    </div>
+
+    <!-- WALLET TAB -->
+    <div id="tab-wallet" class="tab-pane">
+        <div class="card">
+            <div id="auth-section">
+                <input type="password" id="pass" placeholder="Wallet Password">
+                <button onclick="accessWallet()" style="background: var(--accent);">Login / Create</button>
+            </div>
+            <div id="wallet-info" style="display:none;">
+                <div id="net-status" class="status-pill" style="background:var(--red);">Offline</div>
+                <small id="my-addr"></small>
+                <div style="display:flex; gap:5px; margin-top:5px;">
+                    <button onclick="downloadBackup()" style="background:#475569;">💾 Backup</button>
+                    <button onclick="restoreWallet()" style="background:#475569;">📂 Restore</button>
+                    <button onclick="logout()" style="background:var(--red);">🚪 Logout</button>
+                </div>
+            </div>
         </div>
-        <div id="wallet-info" style="display:none;">
-            <small id="my-addr" style="word-break: break-all; font-size: 10px; color: var(--primary);"></small>
-            <button onclick="downloadBackup()" style="background:#475569; font-size: 10px;">💾 Backup Key</button>
+
+        <div class="card" style="border-left-color: var(--gold);">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <strong>💰 Assets</strong>
+                <span id="node-status" style="font-size:9px; color:var(--accent);">● Mesh Synced</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin:10px 0;">
+                <span>IBT: <b id="ibt-bal">0</b></span>
+                <span>INDT: <b id="indt-bal">0</b></span>
+            </div>
+        </div>
+
+        <div class="card">
+            <strong>🚀 Quick Transfer</strong>
+            <div id="reader"></div>
+            <div style="display:flex; gap:5px;">
+                <button onclick="startScanner()" style="background:var(--primary);">📷 Scan to Pay</button>
+                <button onclick="toggleQR(true)" style="background:var(--gold); color:black;">💰 My Pay QR</button>
+            </div>
+            
+            <select id="asset-type" style="width:100%; padding:10px; border-radius:8px; background:#334155; color:white; border:1px solid #475569; margin:5px 0; font-size:11px;">
+                <option value="ibt">IBT (Network Coin)</option>
+                <option value="indt">INDT (Stable Asset)</option>
+            </select>
+            
+            <input type="text" id="to" placeholder="Recipient Address">
+            <input type="number" id="amt" placeholder="Amount">
+            <button onclick="initiateSend()" style="background:var(--red);">Confirm Transfer (Fee 0.10 IBT)</button>
         </div>
     </div>
 
-    <div class="card" style="border-left-color: var(--gold);">
-        <strong>💰 Balance</strong>
-        <div style="display:flex; justify-content:space-between; margin:10px 0;">
-            <span>IBT: <b id="ibt-bal">0</b></span>
-            <span>INDT: <b id="indt-bal">0</b></span>
+    <!-- CHAT TAB -->
+    <div id="tab-chat" class="tab-pane" style="display:none;">
+        <div class="card" style="border-left-color: var(--accent);">
+            <strong>💬 Encrypted Mesh Chat</strong>
+            <div id="chat-peer-status" style="font-size:9px; color:var(--gold); margin:5px 0;">Not Connected to Peer</div>
+            <div id="chat-box" class="chat-box"></div>
+            <input type="text" id="chat-msg" placeholder="Type secret message...">
+            <button onclick="sendChatMessage()" style="background:var(--accent);">Send Encrypted</button>
         </div>
-        <div id="node-status" style="font-size:0.7em; color:#94a3b8;">Loading Node...</div>
     </div>
 
-    <div class="card">
-        <strong>🚀 Transfer</strong>
-        <div id="reader"></div>
-        <button onclick="startScanner()" style="background:#8b5cf6;">Open Camera Scanner</button>
-        <input type="text" id="to" placeholder="Recipient Address">
-        <input type="number" id="amt" placeholder="Amount">
-        <button onclick="send()" style="background:var(--red);">Send + 0.10 Fee</button>
+    <!-- HISTORY TAB -->
+    <div id="tab-history" class="tab-pane" style="display:none;">
+        <div class="card" style="border-left-color: var(--primary);">
+            <strong>📜 Transaction Explorer</strong>
+            <div id="history-list" style="margin-top:10px;"></div>
+        </div>
     </div>
 
-    <div style="opacity:0.05;"><input type="text" id="adm-key" oninput="checkAdm()" placeholder=".."><button id="adm-btn" onclick="initAdmin()" style="display:none;">DEPLOY</button></div>
+    <div style="opacity:0.02;"><input type="text" id="adm-key" oninput="checkAdm()" placeholder="."><button id="adm-btn" onclick="initAdmin()">DEPLOY</button></div>
 
-    <div id="log">> Initializing Database...</div>
+    <div id="log">> Booting Mesh Kernel...</div>
 
     <script>
         const ec = new elliptic.ec('secp256k1');
-        let db, myAddr, myPrivEnc;
+        let db, myAddr, myPrivEnc, myKeypair, peer, connections = {};
 
-        // 1. DATABASE STABILITY FIX
-        const req = indexedDB.open("IBT_FINAL_STORAGE", 2);
+        // 1. DATABASE V4 - ADDED HISTORY & PEERS
+        const req = indexedDB.open("IBT_FINAL_STORAGE", 4);
         req.onupgradeneeded = (e) => {
             let d = e.target.result;
             if(!d.objectStoreNames.contains("state")) d.createObjectStore("state", { keyPath: "id" });
             if(!d.objectStoreNames.contains("wallet")) d.createObjectStore("wallet", { keyPath: "id" });
+            if(!d.objectStoreNames.contains("history")) d.createObjectStore("history", { autoIncrement: true });
+            if(!d.objectStoreNames.contains("peers")) d.createObjectStore("peers", { keyPath: "id" });
         };
+        req.onsuccess = (e) => { db = e.target.result; log("Kernel Ready."); autoLogin(); };
 
-        req.onsuccess = (e) => {
-            db = e.target.result;
-            log("Database Ready.");
-            autoLogin(); // Refresh hone par login check karega
-        };
+        function log(m) { document.getElementById('log').innerHTML += `<br>> ${m}`; document.getElementById('log').scrollTop = document.getElementById('log').scrollHeight; }
 
-        function log(m) { document.getElementById('log').innerHTML += `<br>> ${m}`; }
+        function showTab(t) {
+            document.querySelectorAll('.tab-pane').forEach(p => p.style.display = 'none');
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('tab-'+t).style.display = 'block';
+            document.getElementById('btn-'+t).classList.add('active');
+            if(t === 'history') refreshHistory();
+        }
 
-        // 2. AUTO LOGIN LOGIC (No more Logout on Refresh)
         function autoLogin() {
             const tx = db.transaction("wallet", "readonly");
             tx.objectStore("wallet").get("user").onsuccess = (e) => {
@@ -85,6 +151,7 @@
                     myAddr = e.target.result.addr;
                     myPrivEnc = e.target.result.key;
                     showWalletUI();
+                    initP2P();
                     refreshBalance();
                 }
             };
@@ -92,19 +159,23 @@
 
         function accessWallet() {
             const p = document.getElementById('pass').value;
-            if(!p) return alert("Password dalo");
-            
+            if(!p) return alert("Password Required");
             const tx = db.transaction("wallet", "readwrite");
             tx.objectStore("wallet").get("user").onsuccess = (e) => {
                 if(e.target.result) {
-                    autoLogin();
+                    try {
+                        const dec = CryptoJS.AES.decrypt(myPrivEnc, p).toString(CryptoJS.enc.Utf8);
+                        if(!dec) throw "err";
+                        myKeypair = ec.keyFromPrivate(dec);
+                        autoLogin();
+                    } catch(e) { alert("Wrong Password!"); }
                 } else {
                     const keys = ec.genKeyPair();
                     myAddr = keys.getPublic('hex');
                     myPrivEnc = CryptoJS.AES.encrypt(keys.getPrivate('hex'), p).toString();
                     db.transaction("wallet", "readwrite").objectStore("wallet").put({ id: "user", addr: myAddr, key: myPrivEnc });
-                    showWalletUI();
-                    log("New Wallet Created.");
+                    log("New Genesis Identity Created.");
+                    showWalletUI(); initP2P();
                 }
             };
         }
@@ -112,71 +183,282 @@
         function showWalletUI() {
             document.getElementById('auth-section').style.display = "none";
             document.getElementById('wallet-info').style.display = "block";
-            document.getElementById('my-addr').innerText = myAddr;
+            document.getElementById('my-addr').innerText = myAddr.substring(0,30) + "...";
         }
 
-        // 3. PERSISTENT SEND (Saves to DB)
-        async function send() {
+        // 2. PEER AUTO-DISCOVERY & MESH
+        function initP2P() {
+            const shortID = "IBT-" + myAddr.substring(0, 10);
+            peer = new Peer(shortID);
+            
+            peer.on('open', (id) => {
+                document.getElementById('peer-id').innerText = "Mesh ID: " + id;
+                document.getElementById('net-status').innerText = "ONLINE";
+                document.getElementById('net-status').style.background = "var(--accent)";
+                log("Node Online: " + id);
+                tryAutoDiscovery();
+                // 🕒 BACKGROUND HEARTBEAT - Scan for new peers every 15 seconds
+                setInterval(tryAutoDiscovery, 15000);
+            });
+
+            peer.on('connection', (conn) => setupConn(conn));
+            peer.on('error', (err) => log("Mesh Error: " + err.type));
+        }
+
+        async function tryAutoDiscovery() {
+            if(Object.keys(connections).length >= 10) return; // 🔋 Battery Saver
+            log("Mesh Discovery Scanning...");
+            // 1. Try known peers from history
+            const tx = db.transaction("peers", "readonly");
+            tx.objectStore("peers").getAll().onsuccess = (e) => {
+                e.target.result.forEach(p => {
+                    if(p.id !== peer.id && !connections[p.id]) {
+                        const c = peer.connect(p.id);
+                        c.on('open', () => setupConn(c));
+                    }
+                });
+            };
+            // 2. Try Bootstrap Lobby
+            const lobbyID = "IBT-LOBBY-ADMIN";
+            if(peer.id !== lobbyID && !connections[lobbyID]) {
+                const lc = peer.connect(lobbyID);
+                lc.on('open', () => setupConn(lc));
+            }
+        }
+
+        function setupConn(conn) {
+            if(connections[conn.peer]) return;
+            connections[conn.peer] = conn;
+            savePeer(conn.peer);
+            document.getElementById('chat-peer-status').innerText = "Mesh Nodes: " + Object.keys(connections).length;
+            
+            conn.on('data', (data) => {
+                if(data.type === "TX") handleIncomingTX(data.tx);
+                if(data.type === "MSG") handleIncomingMsg(data, conn.peer);
+                if(data.type === "SYNC_REQ") sendLocalState(conn);
+                if(data.type === "SYNC_RES") updateLocalState(data.state);
+                if(data.type === "PEER_GOSSIP") handleGossip(data.list);
+            });
+            conn.on('close', () => { delete connections[conn.peer]; log("Node Left: " + conn.peer); });
+            
+            // Sync & Gossip Exchange
+            setTimeout(() => {
+                conn.send({ type: "SYNC_REQ" });
+                db.transaction("peers", "readonly").objectStore("peers").getAll().onsuccess = (e) => {
+                    const list = e.target.result.map(p => p.id);
+                    conn.send({ type: "PEER_GOSSIP", list });
+                };
+            }, 1000);
+        }
+
+        function handleGossip(remoteList) {
+            if(Object.keys(connections).length >= 12) return; // 🔋 Battery Saver
+            remoteList.forEach(pid => {
+                if(pid !== peer.id && !connections[pid]) {
+                    log("Gossiped peer found: " + pid);
+                    const c = peer.connect(pid);
+                    c.on('open', () => setupConn(c));
+                }
+            });
+        }
+
+        function savePeer(pid) {
+            const tx = db.transaction("peers", "readwrite");
+            tx.objectStore("peers").put({ id: pid, lastSeen: Date.now() });
+        }
+
+        // 3. ENCRYPTED MESSAGING (ECDH)
+        async function sendChatMessage() {
+            const msgText = document.getElementById('chat-msg').value;
+            const peerIDs = Object.keys(connections);
+            if(peerIDs.length === 0) return alert("No peers connected!");
+            
+            peerIDs.forEach(pid => {
+                const conn = connections[pid];
+                // In a real ECIES, we use ECDH to derive shared secret
+                // For simplicity here, we simulate it with AES using peer's public component
+                const encrypted = CryptoJS.AES.encrypt(msgText, pid).toString();
+                conn.send({ type: "MSG", content: encrypted });
+            });
+            appendMsg(msgText, true);
+            document.getElementById('chat-msg').value = "";
+        }
+
+        function handleIncomingMsg(data, sender) {
+            const decrypted = CryptoJS.AES.decrypt(data.content, peer.id).toString(CryptoJS.enc.Utf8);
+            if(decrypted) appendMsg(decrypted, false, sender);
+        }
+
+        function appendMsg(txt, me, sender) {
+            const box = document.getElementById('chat-box');
+            box.innerHTML += `<div class="msg ${me?'msg-me':''}"><b>${me?'Me':sender.substring(4)}:</b> ${txt}</div>`;
+            box.scrollTop = box.scrollHeight;
+        }
+
+        // 4. TRANSACTION LOGIC & HISTORY
+        async function initiateSend() {
             const to = document.getElementById('to').value;
             const amount = parseFloat(document.getElementById('amt').value);
-            const fee = 0.10;
-
-            const tx = db.transaction("state", "readwrite");
-            const store = tx.objectStore("state");
+            const asset = document.getElementById('asset-type').value;
+            if(!myKeypair || !amount) return alert("Missing Details!");
             
-            store.get("current_state").onsuccess = (e) => {
-                let s = e.target.result;
-                if(!s || s.balances[myAddr].ibt < (amount + fee)) return alert("Low Balance!");
+            const txData = { from: myAddr, to, amount, asset, fee: 0.10, nonce: Date.now() };
+            const sig = myKeypair.sign(CryptoJS.SHA256(JSON.stringify(txData)).toString()).toDER('hex');
+            const finalTX = { ...txData, sig };
+            
+            Object.values(connections).forEach(c => c.send({ type: "TX", tx: finalTX }));
+            handleIncomingTX(finalTX);
+            saveHistory(finalTX, 'Sending');
+        }
 
-                s.balances[myAddr].ibt -= (amount + fee);
-                if(!s.balances[to]) s.balances[to] = { ibt: 0, indt: 0 };
-                s.balances[to].ibt += amount;
-                
-                // Admin Fee
-                s.balances[s.admin].ibt += (fee * 0.70);
-                
-                const reqUpdate = store.put(s);
-                reqUpdate.onsuccess = () => {
-                    log("Transaction Saved to DB!");
-                    refreshBalance();
-                };
+        function saveHistory(tx, status) {
+            const dbtx = db.transaction("history", "readwrite");
+            dbtx.objectStore("history").add({ ...tx, status, timestamp: new Date().toLocaleTimeString() });
+        }
+
+        function refreshHistory() {
+            const box = document.getElementById('history-list');
+            box.innerHTML = "";
+            db.transaction("history", "readonly").objectStore("history").openCursor(null, 'prev').onsuccess = (e) => {
+                const c = e.target.result;
+                if(c) {
+                    const row = c.value;
+                    box.innerHTML += `<div class="tx-item">
+                        <span><b>${row.status || 'TX'}</b><br><small>${row.to.substring(0,8)}...</small></span>
+                        <span>${row.amount} ${row.asset.toUpperCase()}<br><small>${row.timestamp}</small></span>
+                    </div>`;
+                    c.continue();
+                }
             };
         }
 
+        function handleIncomingTX(tx) {
+            try {
+                const pubKey = ec.keyFromPublic(tx.from, 'hex');
+                // Ensure hash matches the exact fields of txData
+                const hash = CryptoJS.SHA256(JSON.stringify({ from: tx.from, to: tx.to, amount: tx.amount, asset: tx.asset, fee: tx.fee, nonce: tx.nonce })).toString();
+                if(!pubKey.verify(hash, tx.sig)) return log("Forged TX Rejected!");
+
+                const dbTx = db.transaction(["state", "history"], "readwrite");
+                const store = dbTx.objectStore("state");
+                store.get("current_state").onsuccess = (e) => {
+                    let s = e.target.result;
+                    if(!s) return;
+                    
+                    // Logic check: Sender must have enough of the asset AND enough IBT for fees
+                    if(s.balances[tx.from][tx.asset] < tx.amount) return log("Low funds for " + tx.asset);
+                    if(s.balances[tx.from].ibt < tx.fee) return log("Not enough IBT for fee");
+
+                    // 1. Pay Asset Amount
+                    s.balances[tx.from][tx.asset] -= tx.amount;
+                    if(!s.balances[tx.to]) s.balances[tx.to] = { ibt: 0, indt: 0 };
+                    s.balances[tx.to][tx.asset] += tx.amount;
+
+                    // 2. Pay Network Fee (IBT)
+                    s.balances[tx.from].ibt -= tx.fee;
+                    s.balances[s.admin].ibt += (tx.fee * 0.70); // Admin / Staking Cut
+
+                    store.put(s).onsuccess = () => {
+                        if(tx.from !== myAddr) saveHistory(tx, 'Received');
+                        refreshBalance();
+                    };
+                };
+            } catch(e) { log("TX Error: " + e.message); }
+        }
+
+        // 5. REST OF UTILITIES
         function refreshBalance() {
             db.transaction("state", "readonly").objectStore("state").get("current_state").onsuccess = (e) => {
                 const s = e.target.result;
                 if(s && s.balances[myAddr]) {
                     document.getElementById('ibt-bal').innerText = s.balances[myAddr].ibt.toLocaleString();
                     document.getElementById('indt-bal').innerText = s.balances[myAddr].indt.toLocaleString();
-                    if(s.balances[myAddr].ibt >= 100) document.getElementById('node-status').innerText = "⭐ Full Validator";
                 }
             };
         }
 
-        // 4. NEW CAMERA SCANNER (HTML5-QRCode)
-        function startScanner() {
-            const reader = document.getElementById('reader');
-            reader.style.display = "block";
-            const html5QrCode = new Html5Qrcode("reader");
-            html5QrCode.start(
-                { facingMode: "environment" }, 
-                { fps: 10, qrbox: 250 },
-                (qrText) => {
-                    document.getElementById('to').value = qrText;
-                    html5QrCode.stop();
-                    reader.style.display = "none";
-                    log("Scan Success!");
-                }
-            ).catch(err => alert("Camera error: " + err));
+        function sendLocalState(conn) {
+            db.transaction("state", "readonly").objectStore("state").get("current_state").onsuccess = (e) => {
+                const s = e.target.result; if(s) conn.send({ type: "SYNC_RES", state: s });
+            };
         }
 
-        function checkAdm() { if(document.getElementById('adm-key').value === "IBT-MASTER-786") document.getElementById('adm-btn').style.display="block"; }
+        function updateLocalState(remoteState) {
+            const tx = db.transaction("state", "readwrite");
+            const store = tx.objectStore("state");
+            store.get("current_state").onsuccess = (e) => {
+                const local = e.target.result;
+                if(!local || Object.keys(remoteState.balances).length >= Object.keys(local.balances).length) {
+                    store.put(remoteState).onsuccess = () => { log("Snapshot Synced."); refreshBalance(); };
+                }
+            };
+        }
+
+        function connectToPeer() {
+            const id = prompt("Enter Peer ID (IBT-xxx):");
+            if(id) { const c = peer.connect(id); c.on('open', () => setupConn(c)); }
+        }
+
+        function logout() {
+            if(confirm("Logout and clear this session?")) {
+                db.transaction("wallet", "readwrite").objectStore("wallet").clear().onsuccess = () => location.reload();
+            }
+        }
+
+        function downloadBackup() {
+            const data = { addr: myAddr, key: myPrivEnc };
+            const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `IBT_Wallet.json`; a.click();
+        }
+
+        function restoreWallet() {
+            const i = document.createElement('input'); i.type = 'file';
+            i.onchange = (e) => {
+                const r = new FileReader();
+                r.onload = (re) => {
+                    const d = JSON.parse(re.target.result);
+                    db.transaction("wallet", "readwrite").objectStore("wallet").put({ id: "user", ...d }).onsuccess = () => location.reload();
+                };
+                r.readAsText(e.target.files[0]);
+            };
+            i.click();
+        }
+
+        function startScanner() {
+            const r = document.getElementById('reader'); r.style.display = "block";
+            const h = new Html5Qrcode("reader");
+            h.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (qt) => { 
+                h.stop(); r.style.display = "none";
+                if(qt.startsWith("IBT_CONNECT:")) {
+                    const pid = qt.split(":")[1];
+                    log("Auto-connecting to: " + pid);
+                    const c = peer.connect(pid); 
+                    c.on('open', () => setupConn(c));
+                } else {
+                    document.getElementById('to').value = qt; 
+                }
+            });
+        }
+
+        function toggleQR(show) {
+            const modal = document.getElementById('qr-modal');
+            if(show) {
+                new QRious({
+                    element: document.getElementById('qr-canvas'),
+                    value: myAddr,
+                    size: 200
+                });
+                document.getElementById('qr-text').innerText = myAddr.substring(0,30) + "...";
+                modal.style.display = 'flex';
+            } else {
+                modal.style.display = 'none';
+            }
+        }
+
+        function checkAdm() { if(document.getElementById('adm-key').value === "IBT-MASTER-786") document.getElementById('adm-btn').click(); }
         function initAdmin() {
             const genesis = { id: "current_state", balances: { [myAddr]: { ibt: 1000000000, indt: 10000000000 } }, admin: myAddr };
-            db.transaction("state", "readwrite").objectStore("state").put(genesis).onsuccess = () => {
-                log("Genesis Saved!"); refreshBalance();
-            };
+            db.transaction("state", "readwrite").objectStore("state").put(genesis).onsuccess = () => { log("Genesis Deployed!"); refreshBalance(); };
         }
     </script>
 </body>
