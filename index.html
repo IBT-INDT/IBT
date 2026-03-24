@@ -3,152 +3,181 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IBT MESH V2.4 | PWA Edition</title>
+    <title>IBT MESH V2.5 | Stable Edition</title>
     <link rel="manifest" href="manifest.json">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/elliptic/6.5.4/elliptic.min.js"></script>
-    <script src="https://rawgit.com/schmich/instascan-builds/master/instascan.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     
     <style>
         :root { --bg: #0f172a; --card: #1e293b; --primary: #3b82f6; --accent: #22c55e; --gold: #eab308; --red: #ef4444; --text: #f8fafc; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 15px; margin: 0; }
-        .card { background: var(--card); padding: 18px; border-radius: 12px; margin-bottom: 12px; border-left: 5px solid var(--primary); box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
-        .install-banner { background: var(--primary); padding: 10px; border-radius: 8px; margin-bottom: 15px; text-align: center; display: none; }
+        body { font-family: sans-serif; background: var(--bg); color: var(--text); padding: 15px; margin: 0; }
+        .card { background: var(--card); padding: 18px; border-radius: 12px; margin-bottom: 12px; border-left: 5px solid var(--primary); }
         button { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 8px; width: 100%; cursor: pointer; font-weight: bold; margin-top: 8px; }
         input { width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; border: 1px solid #475569; background: #334155; color: white; box-sizing: border-box; }
         #log { background: #020617; color: var(--accent); padding: 10px; border-radius: 8px; height: 60px; overflow-y: auto; font-family: monospace; font-size: 11px; margin-top: 10px; }
-        video { width: 100%; border-radius: 10px; display: none; margin-top: 10px; }
+        #reader { width: 100%; border-radius: 10px; display: none; margin-top: 10px; }
     </style>
 </head>
 <body>
 
-    <div id="pwa-banner" class="install-banner">
-        <small>IBT Wallet ko Home Screen par lagayein!</small>
-        <button onclick="installPWA()" style="background: white; color: var(--primary); width: auto; padding: 5px 15px; margin-left: 10px;">INSTALL</button>
-    </div>
-
-    <h2 style="text-align: center; color: var(--primary);">IBT MESH WALLET</h2>
+    <h2 style="text-align: center; color: var(--primary);">IBT MESH V2.5</h2>
 
     <div class="card">
-        <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--red); padding: 8px; border-radius: 8px; font-size: 0.75em; margin-bottom: 10px;">
-            ⚠️ <b>Warning:</b> No Password Recovery. Write it down!
-            <input type="checkbox" id="risk-check" style="width:auto;"> OK
+        <div id="auth-section">
+            <input type="password" id="pass" placeholder="Enter Password">
+            <button onclick="accessWallet()" style="background: var(--accent);">Login / Create Wallet</button>
         </div>
-        <input type="password" id="pass" placeholder="Set Wallet Password">
-        <button onclick="createUserNode()" style="background: var(--accent);">Join Network</button>
-        <div id="backup-area" style="display:none; margin-top:10px;"><button onclick="downloadBackup()" style="background:#475569;">💾 Download .ibt Backup</button></div>
-        <input type="file" id="restore-file" onchange="restoreWallet(event)" style="font-size: 10px; margin-top: 10px;">
-        
-        <div style="opacity:0.02; margin-top:10px;"><input type="text" id="adm-key" oninput="unlockAdm()" placeholder=".."><button id="adm-btn" onclick="initAdmin()" style="display:none;">DEPLOY GENESIS</button></div>
-        <small id="my-addr" style="word-break: break-all; font-size: 8px; color: #64748b;"></small>
+        <div id="wallet-info" style="display:none;">
+            <small id="my-addr" style="word-break: break-all; font-size: 10px; color: var(--primary);"></small>
+            <button onclick="downloadBackup()" style="background:#475569; font-size: 10px;">💾 Backup Key</button>
+        </div>
     </div>
 
     <div class="card" style="border-left-color: var(--gold);">
-        <div style="display:flex; justify-content:space-between;">
+        <strong>💰 Balance</strong>
+        <div style="display:flex; justify-content:space-between; margin:10px 0;">
             <span>IBT: <b id="ibt-bal">0</b></span>
             <span>INDT: <b id="indt-bal">0</b></span>
         </div>
-        <div style="margin-top:10px; font-size:0.8em; color:var(--accent);">Rewards: <span id="rew-amt">0.0000</span> IBT</div>
-        <div id="node-status" style="font-size:0.7em; color:#94a3b8;">Standard Node</div>
+        <div id="node-status" style="font-size:0.7em; color:#94a3b8;">Loading Node...</div>
     </div>
 
     <div class="card">
-        <button onclick="showQR()">My QR Code</button>
-        <div id="qr-box" style="display:none; text-align:center; padding:10px; background:white; border-radius:10px;"><canvas id="qr-gen"></canvas></div>
-        <button onclick="scan()" style="background:#8b5cf6;">Scan & Send</button>
-        <video id="preview"></video>
-        <input type="text" id="to" placeholder="Address">
+        <strong>🚀 Transfer</strong>
+        <div id="reader"></div>
+        <button onclick="startScanner()" style="background:#8b5cf6;">Open Camera Scanner</button>
+        <input type="text" id="to" placeholder="Recipient Address">
         <input type="number" id="amt" placeholder="Amount">
-        <button onclick="send()" style="background:var(--red);">Send (0.10 Fee)</button>
+        <button onclick="send()" style="background:var(--red);">Send + 0.10 Fee</button>
     </div>
 
-    <div id="log">> Ready for PWA Install...</div>
+    <div style="opacity:0.05;"><input type="text" id="adm-key" oninput="checkAdm()" placeholder=".."><button id="adm-btn" onclick="initAdmin()" style="display:none;">DEPLOY</button></div>
+
+    <div id="log">> Initializing Database...</div>
 
     <script>
-        // --- PWA LOGIC ---
-        let deferredPrompt;
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault(); deferredPrompt = e;
-            document.getElementById('pwa-banner').style.display = 'block';
-        });
-        async function installPWA() {
-            if (deferredPrompt) {
-                deferredPrompt.prompt();
-                const { outcome } = await deferredPrompt.userChoice;
-                if (outcome === 'accepted') document.getElementById('pwa-banner').style.display = 'none';
-                deferredPrompt = null;
-            }
-        }
-        if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js'); }
-
-        // --- BLOCKCHAIN LOGIC ---
         const ec = new elliptic.ec('secp256k1');
-        let db, myAddr, myPrivEnc, rewards = 0;
-        const req = indexedDB.open("IBT_PWA_V1", 1);
-        req.onupgradeneeded = (e) => { 
-            let d = e.target.result; 
-            d.createObjectStore("state", { keyPath: "id" }); 
-            d.createObjectStore("wallet", { keyPath: "id" }); 
+        let db, myAddr, myPrivEnc;
+
+        // 1. DATABASE STABILITY FIX
+        const req = indexedDB.open("IBT_FINAL_STORAGE", 2);
+        req.onupgradeneeded = (e) => {
+            let d = e.target.result;
+            if(!d.objectStoreNames.contains("state")) d.createObjectStore("state", { keyPath: "id" });
+            if(!d.objectStoreNames.contains("wallet")) d.createObjectStore("wallet", { keyPath: "id" });
         };
-        req.onsuccess = (e) => { db = e.target.result; log("Mesh DB Connected."); };
+
+        req.onsuccess = (e) => {
+            db = e.target.result;
+            log("Database Ready.");
+            autoLogin(); // Refresh hone par login check karega
+        };
 
         function log(m) { document.getElementById('log').innerHTML += `<br>> ${m}`; }
-        function unlockAdm() { if(document.getElementById('adm-key').value === "IBT-MASTER-786") document.getElementById('adm-btn').style.display="block"; }
 
-        function createUserNode() {
-            if(!document.getElementById('risk-check').checked) return alert("Warning OK karein!");
-            const p = document.getElementById('pass').value;
-            const keys = ec.genKeyPair();
-            myAddr = keys.getPublic('hex');
-            myPrivEnc = CryptoJS.AES.encrypt(keys.getPrivate('hex'), p).toString();
-            db.transaction("wallet", "readwrite").objectStore("wallet").put({ id: "user", addr: myAddr, key: myPrivEnc });
-            document.getElementById('my-addr').innerText = myAddr;
-            document.getElementById('backup-area').style.display = "block";
-            log("Wallet Ready!");
-        }
-
-        function initAdmin() {
-            const genesis = { id: "current_state", balances: { [myAddr]: { ibt: 1000000000, indt: 10000000000 } }, admin: myAddr };
-            db.transaction("state", "readwrite").objectStore("state").put(genesis);
-            updateUI(1000000000, 10000000000); log("Genesis Deployed.");
-        }
-
-        function send() {
-            const to = document.getElementById('to').value;
-            const amount = parseFloat(document.getElementById('amt').value);
-            const fee = 0.10;
-            const tx = db.transaction("state", "readwrite");
-            const store = tx.objectStore("state");
-            store.get("current_state").onsuccess = (e) => {
-                let s = e.target.result;
-                if(s.balances[myAddr].ibt < (amount+fee)) return alert("Low Balance!");
-                s.balances[myAddr].ibt -= (amount+fee);
-                if(!s.balances[to]) s.balances[to] = { ibt: 0, indt: 0 };
-                s.balances[to].ibt += amount;
-                
-                // 70/30 Fee Split
-                s.balances[s.admin].ibt += (fee * 0.70);
-                let vals = Object.keys(s.balances).filter(a => s.balances[a].ibt >= 100 && a !== s.admin);
-                if(vals.length > 0) {
-                    let share = (fee * 0.30) / vals.length;
-                    vals.forEach(v => { s.balances[v].ibt += share; if(v === myAddr) addRew(share); });
-                } else { s.balances[s.admin].ibt += (fee * 0.30); }
-                store.put(s); updateUI(s.balances[myAddr].ibt, s.balances[myAddr].indt);
-                log("Sent Successfully!");
+        // 2. AUTO LOGIN LOGIC (No more Logout on Refresh)
+        function autoLogin() {
+            const tx = db.transaction("wallet", "readonly");
+            tx.objectStore("wallet").get("user").onsuccess = (e) => {
+                if(e.target.result) {
+                    myAddr = e.target.result.addr;
+                    myPrivEnc = e.target.result.key;
+                    showWalletUI();
+                    refreshBalance();
+                }
             };
         }
 
-        function updateUI(i, n) {
-            document.getElementById('ibt-bal').innerText = i.toLocaleString();
-            document.getElementById('indt-bal').innerText = n.toLocaleString();
-            if(i >= 100) document.getElementById('node-status').innerText = "⭐ Full Validator";
+        function accessWallet() {
+            const p = document.getElementById('pass').value;
+            if(!p) return alert("Password dalo");
+            
+            const tx = db.transaction("wallet", "readwrite");
+            tx.objectStore("wallet").get("user").onsuccess = (e) => {
+                if(e.target.result) {
+                    autoLogin();
+                } else {
+                    const keys = ec.genKeyPair();
+                    myAddr = keys.getPublic('hex');
+                    myPrivEnc = CryptoJS.AES.encrypt(keys.getPrivate('hex'), p).toString();
+                    db.transaction("wallet", "readwrite").objectStore("wallet").put({ id: "user", addr: myAddr, key: myPrivEnc });
+                    showWalletUI();
+                    log("New Wallet Created.");
+                }
+            };
         }
-        function addRew(a) { rewards += a; document.getElementById('rew-amt').innerText = rewards.toFixed(4); }
-        function showQR() { const b = document.getElementById('qr-box'); b.style.display = b.style.display === 'none' ? 'block' : 'none'; new QRious({ element: document.getElementById('qr-gen'), value: myAddr, size: 150 }); }
-        function scan() { const v = document.getElementById('preview'); v.style.display = 'block'; let s = new Instascan.Scanner({ video: v }); s.addListener('scan', (c) => { document.getElementById('to').value = c; s.stop(); v.style.display = 'none'; }); Instascan.Camera.getCameras().then(c => { if(c.length > 0) s.start(c[0]); }); }
-        function downloadBackup() { const blob = new Blob([JSON.stringify({a: myAddr, k: myPrivEnc})], {type: "application/json"}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "ibt_wallet.ibt"; a.click(); }
-        function restoreWallet(e) { const r = new FileReader(); r.onload = (ev) => { const d = JSON.parse(ev.target.result); myAddr = d.a; myPrivEnc = d.k; db.transaction("wallet", "readwrite").objectStore("wallet").put({id: "user", addr: myAddr, key: myPrivEnc}); document.getElementById('my-addr').innerText = myAddr; log("Restored!"); }; r.readAsText(e.target.files[0]); }
+
+        function showWalletUI() {
+            document.getElementById('auth-section').style.display = "none";
+            document.getElementById('wallet-info').style.display = "block";
+            document.getElementById('my-addr').innerText = myAddr;
+        }
+
+        // 3. PERSISTENT SEND (Saves to DB)
+        async function send() {
+            const to = document.getElementById('to').value;
+            const amount = parseFloat(document.getElementById('amt').value);
+            const fee = 0.10;
+
+            const tx = db.transaction("state", "readwrite");
+            const store = tx.objectStore("state");
+            
+            store.get("current_state").onsuccess = (e) => {
+                let s = e.target.result;
+                if(!s || s.balances[myAddr].ibt < (amount + fee)) return alert("Low Balance!");
+
+                s.balances[myAddr].ibt -= (amount + fee);
+                if(!s.balances[to]) s.balances[to] = { ibt: 0, indt: 0 };
+                s.balances[to].ibt += amount;
+                
+                // Admin Fee
+                s.balances[s.admin].ibt += (fee * 0.70);
+                
+                const reqUpdate = store.put(s);
+                reqUpdate.onsuccess = () => {
+                    log("Transaction Saved to DB!");
+                    refreshBalance();
+                };
+            };
+        }
+
+        function refreshBalance() {
+            db.transaction("state", "readonly").objectStore("state").get("current_state").onsuccess = (e) => {
+                const s = e.target.result;
+                if(s && s.balances[myAddr]) {
+                    document.getElementById('ibt-bal').innerText = s.balances[myAddr].ibt.toLocaleString();
+                    document.getElementById('indt-bal').innerText = s.balances[myAddr].indt.toLocaleString();
+                    if(s.balances[myAddr].ibt >= 100) document.getElementById('node-status').innerText = "⭐ Full Validator";
+                }
+            };
+        }
+
+        // 4. NEW CAMERA SCANNER (HTML5-QRCode)
+        function startScanner() {
+            const reader = document.getElementById('reader');
+            reader.style.display = "block";
+            const html5QrCode = new Html5Qrcode("reader");
+            html5QrCode.start(
+                { facingMode: "environment" }, 
+                { fps: 10, qrbox: 250 },
+                (qrText) => {
+                    document.getElementById('to').value = qrText;
+                    html5QrCode.stop();
+                    reader.style.display = "none";
+                    log("Scan Success!");
+                }
+            ).catch(err => alert("Camera error: " + err));
+        }
+
+        function checkAdm() { if(document.getElementById('adm-key').value === "IBT-MASTER-786") document.getElementById('adm-btn').style.display="block"; }
+        function initAdmin() {
+            const genesis = { id: "current_state", balances: { [myAddr]: { ibt: 1000000000, indt: 10000000000 } }, admin: myAddr };
+            db.transaction("state", "readwrite").objectStore("state").put(genesis).onsuccess = () => {
+                log("Genesis Saved!"); refreshBalance();
+            };
+        }
     </script>
 </body>
 </html>
