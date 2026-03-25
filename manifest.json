@@ -1,12 +1,19 @@
 {
-  "name": "IBT Mesh Wallet",
-  "short_name": "IBT Wallet",
-  "description": "Decentralized P2P Node & Wallet",
-  "start_url": "index.html",
+  "name": "IBT MESH Decentralized Wallet",
+  "short_name": "IBT Mesh",
+  "description": "Secure Decentralized P2P Trading Wallet on Mesh Network",
+  "start_url": ".",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#0f172a",
   "theme_color": "#3b82f6",
   "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2091/2091665.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "https://cdn-icons-png.flaticon.com/512/2091/2091665.png",
       "sizes": "512x512",
