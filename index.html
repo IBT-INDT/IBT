@@ -10,6 +10,8 @@
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/otpauth/9.1.2/otpauth.umd.min.js"></script>
     
     <style>
         :root { --bg: #0f172a; --card: #1e293b; --primary: #3b82f6; --accent: #22c55e; --gold: #eab308; --red: #ef4444; --text: #f8fafc; }
@@ -17,7 +19,7 @@
         .card { background: var(--card); padding: 15px; border-radius: 12px; margin-bottom: 10px; border-left: 5px solid var(--primary); }
         button { background: var(--primary); color: white; border: none; padding: 10px; border-radius: 8px; width: 100%; cursor: pointer; font-weight: bold; margin-top: 5px; font-size: 11px; }
         input { width: 100%; padding: 10px; margin: 5px 0; border-radius: 8px; border: 1px solid #475569; background: #334155; color: white; box-sizing: border-box; font-size: 11px; }
-        #log { background: #020617; color: var(--accent); padding: 6px; border-radius: 8px; height: 100px; overflow-y: auto; font-family: monospace; font-size: 10px; margin-top: 10px; border: 1px solid #1e293b; }
+        #log { display: none; background: #020617; color: var(--accent); padding: 6px; border-radius: 8px; height: 100px; overflow-y: auto; font-family: monospace; font-size: 10px; margin-top: 10px; border: 1px solid #1e293b; }
         .status-pill { padding: 4px 8px; border-radius: 20px; font-size: 9px; float: right; font-weight: bold; }
         .tab-btn { background: #334155; width: auto; flex: 1; padding: 8px; }
         .tab-btn.active { background: var(--primary); }
@@ -27,11 +29,17 @@
         .msg-me { color: var(--accent); text-align: right; }
         .qr-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
         #qr-canvas { background: white; padding: 10px; border-radius: 10px; }
+        .market-card { background: var(--card); border-radius: 12px; margin-bottom: 10px; border-top: 5px solid var(--accent); overflow: hidden; }
+        #chart-container { width: 100%; height: 300px; background: #020617; }
+        .timeframe-bar { display: flex; background: #0f172a; padding: 5px; gap: 5px; overflow-x: auto; }
+        .tf-btn { background: #1e293b; color: #94a3b8; border: none; padding: 4px 10px; border-radius: 4px; font-size: 10px; cursor: pointer; }
+        .tf-btn.active { color: white; background: var(--primary); }
     </style>
 </head>
 <body>
 
-    <h2 style="text-align: center; color: var(--primary); margin: 10px 0;">IBT MESH <span id="peer-id" style="font-size: 9px; display: block; color: var(--gold);">Syncing Network...</span></h2>
+    <h2 style="text-align: center; color: var(--primary); margin: 10px 0;">IBT MESH</h2>
+    <div id="mesh-info" style="display:none; text-align:center; font-size:9px; color:var(--gold); margin-bottom:5px;">Syncing Network...</div>
 
     <!-- QR OVERLAY -->
     <div id="qr-modal" class="qr-overlay">
@@ -42,10 +50,10 @@
     </div>
 
     <!-- NAVIGATION TABS -->
-    <div style="display:flex; gap:5px; margin-bottom:10px;">
-        <button onclick="showTab('wallet')" id="btn-wallet" class="tab-btn active">Wallet</button>
-        <button onclick="showTab('chat')" id="btn-chat" class="tab-btn">Chat</button>
-        <button onclick="showTab('history')" id="btn-history" class="tab-btn">Explorer</button>
+    <div id="main-nav" style="display:none; gap:5px; margin-bottom:10px;">
+        <button onclick="showTab('market')" id="btn-market" class="tab-btn active">Market</button>
+        <button onclick="showTab('wallet')" id="btn-wallet" class="tab-btn">Wallet</button>
+        <button onclick="showTab('admin')" id="btn-admin" class="tab-btn" style="display:none; border:1px solid var(--gold);">⚙ Admin</button>
     </div>
 
     <!-- WALLET TAB -->
@@ -53,7 +61,15 @@
         <div class="card">
             <div id="auth-section">
                 <input type="password" id="pass" placeholder="Wallet Password">
-                <button onclick="accessWallet()" style="background: var(--accent);">Login / Create</button>
+                <div id="2fa-setup" style="display:none; font-size:10px; border:1px dashed var(--gold); padding:10px; margin-bottom:10px;">
+                    <b style="color:var(--gold);">2FA Setup Required!</b><br>
+                    Save this Secret: <b id="2fa-secret-display"></b><br>
+                    <small>(Link this to Google Authenticator)</small>
+                </div>
+                <div id="2fa-input-box" style="display:none;">
+                    <input type="text" id="otp-code" placeholder="6-digit 2FA Code">
+                </div>
+                <button onclick="accessWallet()" id="login-btn" style="background: var(--accent);">Login / Create</button>
             </div>
             <div id="wallet-info" style="display:none;">
                 <div id="net-status" class="status-pill" style="background:var(--red);">Offline</div>
@@ -66,54 +82,91 @@
             </div>
         </div>
 
+        <div id="wallet-details" style="display:none;">
+            <div class="card" style="border-left-color: var(--gold); text-align: center;">
+                <div id="validator-badge" style="display:none; color:var(--gold); font-size:10px; margin-bottom:5px;">⭐ ACTIVE VALIDATOR ⭐</div>
+                <div style="color:#94a3b8; font-size:12px; margin-bottom:5px;">Your INDT Balance</div>
+                <div style="font-size: 32px; font-weight: bold; color: var(--accent);"><span id="indt-bal">0</span> INDT</div>
+                <div style="font-size: 10px; color: #64748b; margin-top: 5px;">IBT Gas: <span id="ibt-bal">0</span></div>
+                
+                <div style="display:flex; gap:10px; margin-top:15px;">
+                    <button onclick="alert('Payment Gateway Loading...')" style="background:var(--accent); flex:1; height:45px;">📥 DEPOSIT</button>
+                    <button onclick="alert('Withdraw Portal Loading...')" style="background:var(--primary); flex:1; height:45px;">📤 WITHDRAW</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <strong>💸 P2P Transfer (INDT)</strong>
+                <div id="reader"></div>
+                <div style="display:flex; gap:5px; margin: 10px 0;">
+                    <button onclick="startScanner()" style="background:#334155; font-size:10px;">📷 Scan QR</button>
+                    <button onclick="toggleQR(true)" style="background:#334155; font-size:10px;">💰 My QR</button>
+                </div>
+                
+                <input type="text" id="to" placeholder="Recipient Peer ID">
+                <input type="number" id="amt" placeholder="INDT Amount">
+                <button onclick="initiateSend()" style="background:var(--red);">Confirm Send</button>
+            </div>
+
+            <div style="text-align:center; margin-top:10px;">
+                <button onclick="logout()" style="background:none; color:var(--red); font-size:10px; width:auto; text-decoration:underline;">Sign Out from Mesh</button>
+                <div style="font-size:8px; color:#475569; margin-top:5px;" id="my-addr-small"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MARKET TAB -->
+    <div id="tab-market" class="tab-pane" style="display:none;">
+        <div class="market-card">
+            <div style="padding: 10px; display: flex; justify-content: space-between; align-items: center;">
+                <strong>📊 IBT / INDT</strong>
+                <span id="live-price" style="color: var(--accent); font-weight: bold; font-size: 16px;">200.00</span>
+            </div>
+            <div class="timeframe-bar">
+                <button class="tf-btn active" onclick="setTF('5m', this)">5M</button>
+                <button class="tf-btn" onclick="setTF('15m', this)">15M</button>
+                <button class="tf-btn" onclick="setTF('30m', this)">30M</button>
+                <button class="tf-btn" onclick="setTF('1h', this)">1H</button>
+                <button class="tf-btn" onclick="setTF('4h', this)">4H</button>
+                <button class="tf-btn" onclick="setTF('1d', this)">1D</button>
+                <button class="tf-btn" onclick="setTF('1w', this)">1W</button>
+            </div>
+            <div id="chart-container"></div>
+            <div style="padding: 15px; display: flex; gap: 10px;">
+                <div style="flex: 1;">
+                    <input type="number" id="trade-amt" placeholder="Amount INDT">
+                    <button onclick="trade('buy')" style="background: var(--accent); height: 40px; font-size: 14px;">BUY IBT</button>
+                </div>
+                <div style="flex: 1;">
+                    <input type="number" id="trade-sell-amt" placeholder="Amount IBT">
+                    <button onclick="trade('sell')" style="background: var(--red); height: 40px; font-size: 14px;">SELL IBT</button>
+                </div>
+            </div>
+            <div style="padding: 0 15px 15px 15px; font-size: 10px; color: #94a3b8; text-align: center;">
+            </div>
+        </div>
+    </div>
+
+    <!-- ADMIN TAB -->
+    <div id="tab-admin" class="tab-pane" style="display:none;">
+        <div class="card" style="border-left-color: var(--gold); background: #020617;">
+            <div style="font-size:10px; color:#94a3b8;">Network Fee Pool (Revenue)</div>
+            <div style="font-size:24px; color:var(--gold); font-weight:bold;"><span id="fee-pool-bal">0.00</span> INDT</div>
+            <button onclick="claimFees()" style="background:#1e293b; border:1px solid var(--gold); width:auto; padding:5px 15px; margin-top:5px; font-size:9px;">Claim Fees to Wallet</button>
+        </div>
+
         <div class="card" style="border-left-color: var(--gold);">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <strong>💰 Assets</strong>
-                <span id="node-status" style="font-size:9px; color:var(--accent);">● Mesh Synced</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; margin:10px 0;">
-                <span>IBT: <b id="ibt-bal">0</b></span>
-                <span>INDT: <b id="indt-bal">0</b></span>
-            </div>
-        </div>
-
-        <div class="card">
-            <strong>🚀 Quick Transfer</strong>
-            <div id="reader"></div>
-            <div style="display:flex; gap:5px;">
-                <button onclick="startScanner()" style="background:var(--primary);">📷 Scan to Pay</button>
-                <button onclick="toggleQR(true)" style="background:var(--gold); color:black;">💰 My Pay QR</button>
-            </div>
+            <strong>🔨 Admin Minting & Token Gen</strong>
+            <p style="font-size:10px; color:#94a3b8;">Create or Mint tokens directly to Admin wallet.</p>
             
-            <select id="asset-type" style="width:100%; padding:10px; border-radius:8px; background:#334155; color:white; border:1px solid #475569; margin:5px 0; font-size:11px;">
-                <option value="ibt">IBT (Network Coin)</option>
-                <option value="indt">INDT (Stable Asset)</option>
-            </select>
-            
-            <input type="text" id="to" placeholder="Recipient Address">
-            <input type="number" id="amt" placeholder="Amount">
-            <button onclick="initiateSend()" style="background:var(--red);">Confirm Transfer (Fee 0.10 IBT)</button>
+            <input type="text" id="mint-name" placeholder="Token Name (e.g. ibt, indt, gold)">
+            <input type="number" id="mint-amt" placeholder="Amount to Mint">
+            <button onclick="adminMint()" style="background:var(--gold); color:black;">MINT TOKEN</button>
+            <div id="admin-log" style="font-size:9px; color:var(--accent); margin-top:5px;"></div>
         </div>
     </div>
 
-    <!-- CHAT TAB -->
-    <div id="tab-chat" class="tab-pane" style="display:none;">
-        <div class="card" style="border-left-color: var(--accent);">
-            <strong>💬 Encrypted Mesh Chat</strong>
-            <div id="chat-peer-status" style="font-size:9px; color:var(--gold); margin:5px 0;">Not Connected to Peer</div>
-            <div id="chat-box" class="chat-box"></div>
-            <input type="text" id="chat-msg" placeholder="Type secret message...">
-            <button onclick="sendChatMessage()" style="background:var(--accent);">Send Encrypted</button>
-        </div>
-    </div>
-
-    <!-- HISTORY TAB -->
-    <div id="tab-history" class="tab-pane" style="display:none;">
-        <div class="card" style="border-left-color: var(--primary);">
-            <strong>📜 Transaction Explorer</strong>
-            <div id="history-list" style="margin-top:10px;"></div>
-        </div>
-    </div>
+    <!-- CHAT & EXPLORER REMOVED FOR SIMPLICITY -->
 
     <div style="opacity:0.02;"><input type="text" id="adm-key" oninput="checkAdm()" placeholder="."><button id="adm-btn" onclick="initAdmin()">DEPLOY</button></div>
 
@@ -141,7 +194,7 @@
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.getElementById('tab-'+t).style.display = 'block';
             document.getElementById('btn-'+t).classList.add('active');
-            if(t === 'history') refreshHistory();
+            if(t === 'market') { setTimeout(initChart, 100); refreshMarket(); }
         }
 
         function autoLogin() {
@@ -153,37 +206,82 @@
                     showWalletUI();
                     initP2P();
                     refreshBalance();
+                    refreshMarket();
                 }
             };
         }
 
+        let tempKey = null, tempAddr = null, tempEnc = null, tempSecret = null;
         function accessWallet() {
             const p = document.getElementById('pass').value;
+            const otpCode = document.getElementById('otp-code').value;
             if(!p) return alert("Password Required");
+
             const tx = db.transaction("wallet", "readwrite");
             tx.objectStore("wallet").get("user").onsuccess = (e) => {
-                if(e.target.result) {
+                const user = e.target.result;
+                if(user) {
+                    // LOGIN FLOW
                     try {
-                        const dec = CryptoJS.AES.decrypt(myPrivEnc, p).toString(CryptoJS.enc.Utf8);
+                        const dec = CryptoJS.AES.decrypt(user.key, p).toString(CryptoJS.enc.Utf8);
                         if(!dec) throw "err";
+                        
+                        // 2FA VERIFICATION
+                        if(!otpCode) {
+                            document.getElementById('2fa-input-box').style.display = "block";
+                            document.getElementById('login-btn').innerText = "Verify 2FA & Login";
+                            return;
+                        }
+                        
+                        // Decrypt secret
+                        const sec = CryptoJS.AES.decrypt(user.otpSecret, p).toString(CryptoJS.enc.Utf8);
+                        let totp = new OTPAuth.TOTP({ secret: sec });
+                        if(totp.validate({ token: otpCode, window: 1 }) === null) return alert("Invalid 2FA Code!");
+
+                        myAddr = user.addr;
+                        myPrivEnc = user.key;
                         myKeypair = ec.keyFromPrivate(dec);
-                        autoLogin();
+                        showWalletUI(); initP2P(); refreshBalance(); refreshMarket();
                     } catch(e) { alert("Wrong Password!"); }
                 } else {
+                    // REGISTRATION FLOW (with 2FA generation)
+                    if(!tempSecret) {
+                        tempSecret = OTPAuth.Secret.fromHex(CryptoJS.lib.WordArray.random(10).toString()).base32;
+                        document.getElementById('2fa-secret-display').innerText = tempSecret;
+                        document.getElementById('2fa-setup').style.display = "block";
+                        document.getElementById('login-btn').innerText = "Confirm & Registration";
+                        return;
+                    }
+                    
                     const keys = ec.genKeyPair();
-                    myAddr = keys.getPublic('hex');
-                    myPrivEnc = CryptoJS.AES.encrypt(keys.getPrivate('hex'), p).toString();
-                    db.transaction("wallet", "readwrite").objectStore("wallet").put({ id: "user", addr: myAddr, key: myPrivEnc });
-                    log("New Genesis Identity Created.");
-                    showWalletUI(); initP2P();
+                    tempAddr = keys.getPublic('hex');
+                    tempEnc = CryptoJS.AES.encrypt(keys.getPrivate('hex'), p).toString();
+                    const encSecret = CryptoJS.AES.encrypt(tempSecret, p).toString();
+                    
+                    db.transaction("wallet", "readwrite").objectStore("wallet").put({ 
+                        id: "user", addr: tempAddr, key: tempEnc, otpSecret: encSecret 
+                    }).onsuccess = () => location.reload();
                 }
             };
         }
 
         function showWalletUI() {
             document.getElementById('auth-section').style.display = "none";
-            document.getElementById('wallet-info').style.display = "block";
-            document.getElementById('my-addr').innerText = myAddr.substring(0,30) + "...";
+            document.getElementById('main-nav').style.display = "flex";
+            document.getElementById('mesh-info').style.display = "block";
+            document.getElementById('wallet-details').style.display = "block";
+            document.getElementById('my-addr-small').innerText = "ID: " + myAddr;
+            
+            // Show Admin Tab if user is admin
+            db.transaction("state", "readonly").objectStore("state").get("current_state").onsuccess = (e) => {
+                const s = e.target.result;
+                if(s && s.admin === myAddr) {
+                    document.getElementById('btn-admin').style.display = "block";
+                    if(s.feePool) document.getElementById('fee-pool-bal').innerText = s.feePool.indt.toFixed(2);
+                }
+            };
+
+            showTab('market'); // Default to market after login
         }
 
         // 2. PEER AUTO-DISCOVERY & MESH
@@ -192,9 +290,7 @@
             peer = new Peer(shortID);
             
             peer.on('open', (id) => {
-                document.getElementById('peer-id').innerText = "Mesh ID: " + id;
-                document.getElementById('net-status').innerText = "ONLINE";
-                document.getElementById('net-status').style.background = "var(--accent)";
+                document.getElementById('mesh-info').innerText = "Active Mesh ID: " + id;
                 log("Node Online: " + id);
                 tryAutoDiscovery();
                 // 🕒 BACKGROUND HEARTBEAT - Scan for new peers every 15 seconds
@@ -295,14 +391,15 @@
             box.scrollTop = box.scrollHeight;
         }
 
-        // 4. TRANSACTION LOGIC & HISTORY
+        // 4. TRANSACTION LOGIC (SIMPLIFIED FOR INDT)
         async function initiateSend() {
             const to = document.getElementById('to').value;
             const amount = parseFloat(document.getElementById('amt').value);
-            const asset = document.getElementById('asset-type').value;
+            const asset = "indt"; // Simplified to INDT only
             if(!myKeypair || !amount) return alert("Missing Details!");
             
-            const txData = { from: myAddr, to, amount, asset, fee: 0.10, nonce: Date.now() };
+            const feeVal = amount * 0.005; // 0.50% fee
+            const txData = { from: myAddr, to, amount, asset, fee: feeVal, nonce: Date.now() };
             const sig = myKeypair.sign(CryptoJS.SHA256(JSON.stringify(txData)).toString()).toDER('hex');
             const finalTX = { ...txData, sig };
             
@@ -354,9 +451,9 @@
                     if(!s.balances[tx.to]) s.balances[tx.to] = { ibt: 0, indt: 0 };
                     s.balances[tx.to][tx.asset] += tx.amount;
 
-                    // 2. Pay Network Fee (IBT)
-                    s.balances[tx.from].ibt -= tx.fee;
-                    s.balances[s.admin].ibt += (tx.fee * 0.70); // Admin / Staking Cut
+                    // 2. Pay Network Fee (INDT Distributed: 70% Admin Pool, 30% Validators)
+                    s.balances[tx.from].indt -= tx.fee;
+                    distributeFee(s, tx.fee);
 
                     store.put(s).onsuccess = () => {
                         if(tx.from !== myAddr) saveHistory(tx, 'Received');
@@ -371,8 +468,14 @@
             db.transaction("state", "readonly").objectStore("state").get("current_state").onsuccess = (e) => {
                 const s = e.target.result;
                 if(s && s.balances[myAddr]) {
-                    document.getElementById('ibt-bal').innerText = s.balances[myAddr].ibt.toLocaleString();
-                    document.getElementById('indt-bal').innerText = s.balances[myAddr].indt.toLocaleString();
+                    const ibt = s.balances[myAddr].ibt;
+                    const indt = s.balances[myAddr].indt;
+                    document.getElementById('ibt-bal').innerText = ibt.toLocaleString();
+                    document.getElementById('indt-bal').innerText = indt.toLocaleString();
+                    
+                    // Update Validator Badge
+                    if(ibt >= 100) document.getElementById('validator-badge').style.display = "block";
+                    else document.getElementById('validator-badge').style.display = "none";
                 }
             };
         }
@@ -389,7 +492,7 @@
             store.get("current_state").onsuccess = (e) => {
                 const local = e.target.result;
                 if(!local || Object.keys(remoteState.balances).length >= Object.keys(local.balances).length) {
-                    store.put(remoteState).onsuccess = () => { log("Snapshot Synced."); refreshBalance(); };
+                    store.put(remoteState).onsuccess = () => { log("Snapshot Synced."); refreshBalance(); refreshMarket(); };
                 }
             };
         }
@@ -455,10 +558,208 @@
             }
         }
 
+        // 6. TRADING ENGINE (AMM SIMULATION)
+        let chart, candleSeries, currentTF = '5m';
+
+        function initChart() {
+            if(chart) return;
+            chart = LightweightCharts.createChart(document.getElementById('chart-container'), {
+                layout: { background: { color: '#020617' }, textColor: '#94a3b8' },
+                grid: { vertLines: { color: '#0f172a' }, horzLines: { color: '#0f172a' } },
+                timeScale: { timeVisible: true, secondsVisible: false }
+            });
+            candleSeries = chart.addCandlestickSeries({ upColor: '#22c55e', downColor: '#ef4444', borderDownColor: '#ef4444', borderUpColor: '#22c55e', wickDownColor: '#ef4444', wickUpColor: '#22c55e' });
+            loadHistoricalData();
+        }
+
+        function setTF(tf, btn) {
+            currentTF = tf;
+            document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            loadHistoricalData();
+        }
+
+        function loadHistoricalData() {
+            const tx = db.transaction("state", "readonly");
+            tx.objectStore("state").get("current_state").onsuccess = (e) => {
+                const s = e.target.result;
+                if(s && s.marketHistory) {
+                    const filtered = s.marketHistory.filter(h => h.tf === currentTF);
+                    candleSeries.setData(filtered);
+                } else {
+                    // Seed initial candle if empty
+                    const now = Math.floor(Date.now() / 1000);
+                    candleSeries.setData([{ time: now, open: 200, high: 200, low: 200, close: 200 }]);
+                }
+            };
+        }
+
+        function trade(type) {
+            const val = parseFloat(document.getElementById(type === 'buy' ? 'trade-amt' : 'trade-sell-amt').value);
+            if(!val || val <= 0) return alert("Enter valid amount");
+
+            db.transaction("state", "readwrite").objectStore("state").get("current_state").onsuccess = (e) => {
+                let s = e.target.result;
+                if(!s) return;
+                if(!s.price) s.price = 200;
+                if(!s.marketHistory) s.marketHistory = [];
+
+                const oldPrice = s.price;
+                const feeINDT = val * 0.005; // 0.50% fee
+                let newPrice, avgPrice, costINDT, amtIBT;
+
+                if(type === 'buy') {
+                    costINDT = val;
+                    if(s.balances[myAddr].indt < (costINDT + feeINDT)) return alert("Insufficient INDT for Buy + Fee");
+                    if(s.balances[s.admin].ibt < costINDT/oldPrice) return alert("Market Liquidity Low");
+                    
+                    const priceIncr = (costINDT / 1000) * 10;
+                    newPrice = oldPrice + priceIncr;
+                    avgPrice = (oldPrice + newPrice) / 2;
+                    amtIBT = costINDT / avgPrice;
+
+                    // User Pays INDT cost to Admin (to Buy IBT)
+                    s.balances[myAddr].indt -= costINDT;
+                    s.balances[s.admin].indt += costINDT;
+                    
+                    // Admin Gives IBT to User
+                    s.balances[s.admin].ibt -= amtIBT;
+                    s.balances[myAddr].ibt += amtIBT;
+                    
+                    // Trading Fee Layer (70% Pool, 30% Validators)
+                    if(!s.feePool) s.feePool = { indt: 0 };
+                    s.balances[myAddr].indt -= feeINDT;
+                    distributeFee(s, feeINDT);
+                } else {
+                    amtIBT = val;
+                    if(s.balances[myAddr].ibt < amtIBT) return alert("Insufficient IBT");
+                    
+                    const valueINDT = amtIBT * oldPrice;
+                    const finalFee = valueINDT * 0.005;
+                    if(s.balances[s.admin].indt < valueINDT) return alert("Market Reserves Low");
+
+                    const priceDecr = (valueINDT / 1000) * 10;
+                    newPrice = Math.max(1, oldPrice - priceDecr);
+                    avgPrice = (oldPrice + newPrice) / 2;
+                    costINDT = amtIBT * avgPrice;
+
+                    // User Pays IBT to Admin
+                    s.balances[myAddr].ibt -= amtIBT;
+                    s.balances[s.admin].ibt += amtIBT;
+                    
+                    // Admin Gives INDT balance to User (after deducting fee to Pool/Validators)
+                    const netProceeds = costINDT - (costINDT * 0.005);
+                    const actualFee = costINDT * 0.005;
+                    s.balances[s.admin].indt -= costINDT;
+                    s.balances[myAddr].indt += netProceeds;
+                    
+                    distributeFee(s, actualFee);
+                }
+
+                s.price = newPrice;
+
+                updateCandle(s, oldPrice, newPrice);
+                
+                db.transaction("state", "readwrite").objectStore("state").put(s).onsuccess = () => {
+                    log(`Trade Executed: ${type.toUpperCase()} @ ${avgPrice.toFixed(2)}`);
+                    refreshBalance();
+                    refreshMarket();
+                    // Propagate to mesh
+                    Object.values(connections).forEach(c => c.send({ type: "SYNC_RES", state: s }));
+                };
+            };
+        }
+
+        function updateCandle(s, oldP, newP) {
+            const now = Math.floor(Date.now() / 1000);
+            const tfSeconds = { '5m':300, '15m':900, '30m':1800, '1h':3600, '4h':14400, '1d':86400, '1w':604800 };
+            
+            Object.keys(tfSeconds).forEach(tf => {
+                const bucket = Math.floor(now / tfSeconds[tf]) * tfSeconds[tf];
+                let last = s.marketHistory.findLast(h => h.tf === tf && h.time === bucket);
+                
+                if(!last) {
+                    last = { time: bucket, open: oldP, high: Math.max(oldP, newP), low: Math.min(oldP, newP), close: newP, tf: tf };
+                    s.marketHistory.push(last);
+                } else {
+                    last.high = Math.max(last.high, newP);
+                    last.low = Math.min(last.low, newP);
+                    last.close = newP;
+                }
+            });
+            // Keep only last 100 candles per TF to save space
+            if(s.marketHistory.length > 700) s.marketHistory = s.marketHistory.slice(-700);
+        }
+
+        function refreshMarket() {
+            db.transaction("state", "readonly").objectStore("state").get("current_state").onsuccess = (e) => {
+                const s = e.target.result;
+                if(s && s.price) {
+                    document.getElementById('live-price').innerText = s.price.toFixed(2);
+                    if(chart) loadHistoricalData();
+                }
+            };
+        }
+
         function checkAdm() { if(document.getElementById('adm-key').value === "IBT-MASTER-786") document.getElementById('adm-btn').click(); }
+        
+        function distributeFee(s, totalFee) {
+            if(!s.feePool) s.feePool = { indt: 0 };
+            const adminShare = totalFee * 0.70;
+            const valShare = totalFee * 0.30;
+
+            const validators = Object.keys(s.balances).filter(addr => s.balances[addr].ibt >= 100);
+            
+            if(validators.length > 0) {
+                const perVal = valShare / validators.length;
+                validators.forEach(v => s.balances[v].indt += perVal);
+                s.feePool.indt += adminShare;
+            } else {
+                // If no validators, Admin takes full 100%
+                s.feePool.indt += totalFee;
+            }
+        }
+
+        function adminMint() {
+            const token = document.getElementById('mint-name').value.toLowerCase().trim();
+            const amt = parseFloat(document.getElementById('mint-amt').value);
+            if(!token || !amt) return alert("Fill all fields");
+
+            db.transaction("state", "readwrite").objectStore("state").get("current_state").onsuccess = (e) => {
+                let s = e.target.result;
+                if(!s || s.admin !== myAddr) return alert("Not Authorized");
+
+                if(!s.balances[s.admin][token]) s.balances[s.admin][token] = 0;
+                s.balances[s.admin][token] += amt;
+
+                db.transaction("state", "readwrite").objectStore("state").put(s).onsuccess = () => {
+                    document.getElementById('admin-log').innerText = `MINTED: ${amt} ${token.toUpperCase()}`;
+                    refreshBalance();
+                    Object.values(connections).forEach(c => c.send({ type: "SYNC_RES", state: s }));
+                };
+            };
+        }
+
+        function claimFees() {
+            db.transaction("state", "readwrite").objectStore("state").get("current_state").onsuccess = (e) => {
+                let s = e.target.result;
+                if(!s || s.admin !== myAddr || !s.feePool || s.feePool.indt <= 0) return alert("Nothing to claim");
+                
+                const amt = s.feePool.indt;
+                s.balances[myAddr].indt += amt;
+                s.feePool.indt = 0;
+                
+                db.transaction("state", "readwrite").objectStore("state").put(s).onsuccess = () => {
+                    alert(`Claimed ${amt.toFixed(2)} INDT!`);
+                    refreshBalance();
+                    Object.values(connections).forEach(c => c.send({ type: "SYNC_RES", state: s }));
+                };
+            };
+        }
+
         function initAdmin() {
-            const genesis = { id: "current_state", balances: { [myAddr]: { ibt: 1000000000, indt: 10000000000 } }, admin: myAddr };
-            db.transaction("state", "readwrite").objectStore("state").put(genesis).onsuccess = () => { log("Genesis Deployed!"); refreshBalance(); };
+            const genesis = { id: "current_state", balances: { [myAddr]: { ibt: 10000000, indt: 10000000 } }, admin: myAddr, price: 200, marketHistory: [], feePool: { indt: 0 } };
+            db.transaction("state", "readwrite").objectStore("state").put(genesis).onsuccess = () => { log("Genesis Deployed!"); refreshBalance(); refreshMarket(); };
         }
     </script>
 </body>
