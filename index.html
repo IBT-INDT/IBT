@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>IBT Mobile Wallet (Mesh Network)</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gun/sea.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator/qrcode.min.js"></script>
+    <style>
+        .wallet-card {
+            background: linear-gradient(135deg, rgba(30, 58, 138, 0.4), rgba(139, 92, 246, 0.3));
+            padding: 30px; border-radius: 24px; text-align: center; margin-top: 20px; border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .nav-bar {
+            position: fixed; bottom: 20px; left: 20px; right: 20px; display: flex; justify-content: space-around;
+            padding: 15px; background: rgba(10, 10, 12, 0.8); backdrop-filter: blur(20px); border-radius: 20px; border: 1px solid var(--card-border);
+        }
+        .nav-item { color: var(--text-dim); text-decoration: none; font-size: 0.8rem; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .nav-item.active { color: var(--primary); }
+        .screen { display: none; }
+        .screen.active { display: block; }
+        #qr-code { background: white; padding: 15px; border-radius: 15px; display: inline-block; margin-top: 20px; }
+        .tx-list { margin-top: 20px; max-height: 300px; overflow-y: auto; }
+        .tx-item { padding: 12px; border-bottom: 1px solid var(--card-border); display: flex; flex-direction: column; font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+    <div class="container" style="padding-bottom: 100px;">
+        <div id="login-screen" class="screen active">
+            <div style="text-align: center; margin-top: 50px;">
+                <img src="icon.png" width="80" style="border-radius: 20px; margin-bottom: 20px;" alt="Logo">
+                <h1 class="gradient-text">IBT Mesh Wallet</h1>
+                <p style="color: var(--text-dim);">No Server - Pure P2P Sync</p>
+                <div style="margin-top: 40px; display: flex; flex-direction: column; gap: 15px;">
+                    <button class="btn btn-primary" id="btn-create">Create New Wallet</button>
+                    <button class="btn btn-outline" id="btn-login" onclick="promptLogin()">Login with Private Key</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="wallet-screen" class="screen">
+            <header style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
+                <div>
+                    <p style="color: var(--text-dim); font-size: 0.9rem;">Total Balance</p>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <h1 id="balance-val" style="font-size: 2.2rem;">0 IBT</h1>
+                        <button onclick="location.reload()" style="background: none; border: none; cursor: pointer; font-size: 1.2rem;">🔄</button>
+                    </div>
+                </div>
+                <div class="status-badge" id="net-status" style="background: #ffaa00;">Syncing...</div>
+            </header>
+
+            <div class="wallet-card animate-fade">
+                <p style="font-size: 0.8rem; opacity: 0.7;">Your Public ID (Share this)</p>
+                <p id="my-pub" style="font-size: 0.6rem; color: var(--primary); word-break: break-all; margin-top: 5px;">Awaiting login...</p>
+            </div>
+
+            <div class="tx-list" id="tx-history">
+                <p style="color: var(--text-dim); font-size: 0.8rem; margin-bottom: 10px;">Recent Activity</p>
+            </div>
+        </div>
+
+        <div id="send-screen" class="screen">
+            <h1 class="gradient-text" style="margin-top: 20px;">Send IBT</h1>
+            <div style="margin-top: 30px; display: flex; flex-direction: column; gap: 20px;">
+                <input type="text" id="send-to" placeholder="Recipient Public ID">
+                <input type="number" id="send-amount" placeholder="Amount">
+                <button class="btn btn-primary" id="btn-confirm-send">Sync with Mesh</button>
+                <button class="btn btn-outline" onclick="showScreen('wallet-screen')">Cancel</button>
+            </div>
+        </div>
+
+        <div id="receive-screen" class="screen" style="text-align: center;">
+            <h1 class="gradient-text" style="margin-top: 20px;">Receive IBT</h1>
+            <div id="qr-code"></div>
+            <p id="receive-pub" style="font-size: 0.7rem; color: var(--primary); word-break: break-all; margin-top: 15px; padding: 10px; border: 1px dashed var(--card-border); border-radius: 10px;"></p>
+            <button class="btn btn-primary" style="margin-top: 30px; width: 100%;" onclick="copyAddr()">Copy Address</button>
+        </div>
+
+        <nav class="nav-bar" id="mobile-nav" style="display: none;">
+            <a href="#" class="nav-item active" onclick="showScreen('wallet-screen')"><span>🏠</span> Home</a>
+            <a href="#" class="nav-item" onclick="showScreen('send-screen')"><span>💸</span> Send</a>
+            <a href="#" class="nav-item" onclick="showScreen('receive-screen')"><span>📥</span> Receive</a>
+        </nav>
+    </div>
+
+    <script>
+        const relays = [
+            'https://gun-manhattan.herokuapp.com/gun',
+            'https://peer.wall.gl/gun',
+            'https://gundb.herokuapp.com/gun',
+            'https://gunjs.herokuapp.com/gun',
+            'https://gun-us.herokuapp.com/gun',
+            'https://gun-ams1.marda.cloud/gun',
+            'https://dweb.link/gun',
+            'https://relay.peer.ooo/gun',
+            'https://gun-sjc.herokuapp.com/gun',
+            'https://gun-eu.herokuapp.com/gun',
+            'https://gun-matrix.herokuapp.com/gun',
+            'https://gun-db.herokuapp.com/gun',
+            'https://gun-test.herokuapp.com/gun'
+        ];
+
+        const gun = Gun(relays);
+        const sea = SEA;
+        let user = gun.user();
+        let myPair;
+
+        function showScreen(id) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            document.getElementById('mobile-nav').style.display = id === 'login-screen' ? 'none' : 'flex';
+            if (id === 'receive-screen') {
+                const qr = qrcode(0, 'M');
+                qr.addData(myPair.pub);
+                qr.make();
+                document.getElementById('qr-code').innerHTML = qr.createImgTag(6);
+                document.getElementById('receive-pub').innerText = myPair.pub;
+            }
+        }
+
+        async function initWallet() {
+            let saved = localStorage.getItem('ibt_wallet_pair');
+            if (!saved) return;
+            myPair = JSON.parse(saved);
+            
+            user.auth(myPair, (ack) => {
+                if (ack.err) return;
+                document.getElementById('my-pub').innerText = myPair.pub;
+                showScreen('wallet-screen');
+                loadLedger();
+                monitorPeers();
+            });
+        }
+
+        function loadLedger() {
+            // Balance sync
+            user.get('ibt').get('balance').on(val => {
+                document.getElementById('balance-val').innerText = (val || 0).toLocaleString() + " IBT";
+            });
+
+            // Listen for incoming in MY INBOX
+            gun.get('ibt_inbox').get(myPair.pub).map().on((tx, id) => {
+                if (tx && tx.to === myPair.pub) {
+                    user.get('ibt_history').get(id).once(exists => {
+                        if (!exists) {
+                            user.get('ibt').get('balance').once(current => {
+                                user.get('ibt').get('balance').put((current || 0) + tx.amount);
+                                user.get('ibt_history').get(id).put(tx);
+                                addTxUI(tx);
+                            });
+                        }
+                    });
+                }
+            });
+        }
+
+        function monitorPeers() {
+            setInterval(() => {
+                const peers = gun.back('opt.peers');
+                const count = Object.values(peers).filter(p => !p.closed).length;
+                const statusEl = document.getElementById('net-status');
+                statusEl.textContent = count > 0 ? `${count} Nodes Active` : 'Disconnected';
+                statusEl.style.background = count > 0 ? 'var(--accent)' : '#ffaa00';
+            }, 5000);
+        }
+
+        function addTxUI(tx) {
+            const list = document.getElementById('tx-history');
+            const div = document.createElement('div');
+            div.className = 'tx-item';
+            div.innerHTML = `
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="font-weight: 600;">+${tx.amount.toLocaleString()} IBT</span>
+                    <span style="opacity: 0.5; font-size: 0.7rem;">${new Date(tx.time).toLocaleTimeString()}</span>
+                </div>
+                <div style="opacity: 0.7; font-size: 0.7rem; margin-top: 4px;">From: ${tx.from.substring(0,20)}...</div>
+            `;
+            list.prepend(div);
+        }
+
+        document.getElementById('btn-confirm-send').onclick = () => {
+            const dest = document.getElementById('send-to').value.trim();
+            const amount = parseFloat(document.getElementById('send-amount').value);
+            
+            user.get('ibt').get('balance').once(bal => {
+                if ((bal || 0) < amount) return alert("Low balance");
+
+                gun.get('ibt_v1').get('last_tx').once(parentId => {
+                    parentId = parentId || 'genesis_root';
+                    const txId = 'tx_' + Math.random().toString(36).substring(7);
+
+                    const tx = { from: myPair.pub, to: dest, amount, parent: parentId, time: Date.now(), id: txId };
+                    
+                    gun.get('ibt_inbox').get(dest).get(txId).put(tx);
+                    user.get('ibt').get('balance').put(bal - amount);
+                    gun.get('ibt_v1').get('last_tx').put(txId);
+                    
+                    alert("Sync Successful!");
+                    showScreen('wallet-screen');
+                });
+            });
+        };
+
+        document.getElementById('btn-create').onclick = async () => {
+            const pair = await sea.pair();
+            localStorage.setItem('ibt_wallet_pair', JSON.stringify(pair));
+            location.reload();
+        };
+
+        function copyAddr() {
+            navigator.clipboard.writeText(myPair.pub);
+            alert("Address copied!");
+        }
+
+        initWallet();
+        if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+    </script>
+</body>
+</html>

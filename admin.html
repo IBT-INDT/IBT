@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IBT Admin Console (P2P Redundant)</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gun/sea.js"></script>
+    <style>
+        .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 768px) { .admin-grid { grid-template-columns: 1fr; } }
+        .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; background: var(--accent); color: black; font-weight: 600; }
+        .log-box { height: 200px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 10px; font-family: monospace; font-size: 0.85rem; color: var(--accent); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header style="text-align: center; margin-bottom: 40px;">
+            <h1 class="gradient-text" style="font-size: 2.5rem;">IBT Mesh Admin</h1>
+            <p style="color: var(--text-dim);">Redundant P2P Nodes (No Server)</p>
+        </header>
+
+        <div class="admin-grid">
+            <div class="glass card">
+                <h2 style="margin-bottom: 20px;">Genesis Supply</h2>
+                <p style="font-size: 2rem; font-weight: 600;" id="total-supply">0 IBT</p>
+                <p style="color: var(--text-dim); font-size: 0.8rem;">Decentralized Ledger</p>
+                <button class="btn btn-primary" style="margin-top: 20px; width: 100%;" id="btn-genesis">Genesis 1 Billion IBT</button>
+            </div>
+
+            <div class="glass card">
+                <h2 style="margin-bottom: 20px;">Network Status</h2>
+                <p>Mesh: <span id="peer-count" class="status-badge" style="background: #ffaa00;">Connecting...</span></p>
+                <div style="margin-top: 20px;">
+                    <p style="font-size: 0.8rem; color: var(--text-dim);">Admin Public Key:</p>
+                    <input type="text" id="admin-pub" readonly style="font-size: 0.6rem; color: var(--accent);">
+                </div>
+            </div>
+        </div>
+
+        <div class="glass card">
+            <h2 style="margin-bottom: 20px;">Send Tokens (Mesh Sync)</h2>
+            <div style="display: flex; flex-direction: column; gap: 15px;">
+                <input type="text" id="dest-pub" placeholder="Destination Public ID">
+                <input type="number" id="send-amount" placeholder="Amount of IBT">
+                <button class="btn btn-primary" id="btn-send">Broadcast to Mesh</button>
+            </div>
+        </div>
+
+        <div class="glass card">
+            <h2 style="margin-bottom: 10px;">Activity Log</h2>
+            <div id="log" class="log-box"></div>
+        </div>
+    </div>
+
+    <script>
+        const relays = [
+            'https://gun-manhattan.herokuapp.com/gun',
+            'https://peer.wall.gl/gun',
+            'https://gundb.herokuapp.com/gun',
+            'https://gunjs.herokuapp.com/gun',
+            'https://gun-us.herokuapp.com/gun',
+            'https://gun-ams1.marda.cloud/gun',
+            'https://dweb.link/gun',
+            'https://relay.peer.ooo/gun',
+            'https://gun-sjc.herokuapp.com/gun',
+            'https://gun-eu.herokuapp.com/gun',
+            'https://gun-matrix.herokuapp.com/gun',
+            'https://gun-db.herokuapp.com/gun',
+            'https://gun-test.herokuapp.com/gun',
+            'https://gun-chat.herokuapp.com/gun'
+        ];
+
+        const gun = Gun(relays);
+        const sea = SEA;
+        let admin = gun.user();
+        const logEl = document.getElementById('log');
+
+        function log(msg) {
+            const div = document.createElement('div');
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logEl.prepend(div);
+        }
+
+        async function initAdmin() {
+            let pair = localStorage.getItem('ibt_admin_pair');
+            if (pair) pair = JSON.parse(pair);
+            else {
+                pair = await sea.pair();
+                localStorage.setItem('ibt_admin_pair', JSON.stringify(pair));
+            }
+            
+            admin.auth(pair, (ack) => {
+                document.getElementById('admin-pub').value = pair.pub;
+                log("Admin Authenticated: " + pair.pub.substring(0,8) + "...");
+                loadBalance();
+            });
+
+            // Monitor Peers
+            setInterval(() => {
+                const peers = gun.back('opt.peers');
+                const count = Object.values(peers).filter(p => !p.closed).length;
+                document.getElementById('peer-count').innerText = `${count} Peers Active`;
+                document.getElementById('peer-count').style.background = count > 0 ? 'var(--accent)' : '#ffaa00';
+            }, 5000);
+        }
+
+        function loadBalance() {
+            admin.get('ibt').get('balance').on(val => {
+                document.getElementById('total-supply').innerText = (val || 0).toLocaleString() + " IBT";
+            });
+        }
+
+        document.getElementById('btn-genesis').onclick = async () => {
+            log("Initializing Genesis Node...");
+            const txId = 'genesis_' + Math.random().toString(36).substring(7);
+            gun.get('ibt_v1').get('last_tx').put(txId);
+            admin.get('ibt').get('balance').put(1000000000);
+            log("1 Billion IBT Minted successfully!");
+            document.getElementById('btn-genesis').innerText = "Genesis Complete";
+        };
+
+        document.getElementById('btn-send').onclick = async () => {
+            const dest = document.getElementById('dest-pub').value.trim();
+            const amount = parseFloat(document.getElementById('send-amount').value);
+            
+            if (!dest || !amount) return alert("Enter destination and amount");
+
+            admin.get('ibt').get('balance').once(async (bal) => {
+                if ((bal || 0) < amount) return alert("Insufficient balance");
+
+                gun.get('ibt_v1').get('last_tx').once(async (parentId) => {
+                    parentId = parentId || 'genesis_root';
+                    const txId = 'tx_' + Math.random().toString(36).substring(7);
+
+                    log(`Broadcasting transaction to Inbox of ${dest.substring(0,8)}...`);
+                    
+                    // Transaction with DAG parent
+                    const tx = { from: admin.is.pub, to: dest, amount, parent: parentId, time: Date.now(), id: txId };
+                    
+                    // Send to Inbox
+                    gun.get('ibt_inbox').get(dest).get(txId).put(tx);
+                    
+                    // Update Ledger
+                    admin.get('ibt').get('balance').put(bal - amount);
+                    gun.get('ibt_v1').get('last_tx').put(txId);
+                    log("P2P Mesh Sync Success!");
+                });
+            });
+        };
+
+        if (localStorage.getItem('ibt_admin_pair')) document.getElementById('btn-genesis').innerText = "Genesis Complete";
+        initAdmin();
+    </script>
+</body>
+</html>
