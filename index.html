@@ -108,9 +108,17 @@
                 <button onclick="initiateSend()" style="background:var(--red);">Confirm Send</button>
             </div>
 
+            <div class="card">
+                <strong>📜 Transaction History</strong>
+                <div id="history-list" style="max-height: 150px; overflow-y: auto; margin-top: 10px;">
+                    <div style="font-size: 9px; color: #475569; text-align: center; padding: 10px;">No transactions yet</div>
+                </div>
+            </div>
+
             <div style="text-align:center; margin-top:10px;">
                 <button onclick="logout()" style="background:none; color:var(--red); font-size:10px; width:auto; text-decoration:underline;">Sign Out from Mesh</button>
-                <div style="font-size:8px; color:#475569; margin-top:5px;" id="my-addr-small"></div>
+                <div style="font-size:8px; color:#475569; margin-top:5px; cursor:pointer;" id="my-addr-small" onclick="copyID()"></div>
+                <button onclick="copyID()" style="background:#1e293b; border:1px solid #475569; width:auto; padding:2px 8px; font-size:8px; margin-top:2px;">📋 Copy ID</button>
             </div>
         </div>
     </div>
@@ -175,6 +183,15 @@
     <script>
         const ec = new elliptic.ec('secp256k1');
         let db, myAddr, myPrivEnc, myKeypair, peer, connections = {};
+
+        // 0. SERVICE WORKER REGISTRATION
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').then(reg => {
+                    console.log('SW Registered:', reg.scope);
+                }).catch(err => console.log('SW Error:', err));
+            });
+        }
 
         // 1. DATABASE V4 - ADDED HISTORY & PEERS
         const req = indexedDB.open("IBT_FINAL_STORAGE", 4);
@@ -406,6 +423,7 @@
             Object.values(connections).forEach(c => c.send({ type: "TX", tx: finalTX }));
             handleIncomingTX(finalTX);
             saveHistory(finalTX, 'Sending');
+            refreshHistory();
         }
 
         function saveHistory(tx, status) {
@@ -458,6 +476,7 @@
                     store.put(s).onsuccess = () => {
                         if(tx.from !== myAddr) saveHistory(tx, 'Received');
                         refreshBalance();
+                        refreshHistory();
                     };
                 };
             } catch(e) { log("TX Error: " + e.message); }
@@ -525,6 +544,15 @@
                 r.readAsText(e.target.files[0]);
             };
             i.click();
+        }
+
+        function copyID() {
+            if(!myAddr) return;
+            navigator.clipboard.writeText(myAddr).then(() => {
+                const old = document.getElementById('my-addr-small').innerText;
+                document.getElementById('my-addr-small').innerText = "✅ COPIED!";
+                setTimeout(() => document.getElementById('my-addr-small').innerText = old, 1500);
+            });
         }
 
         function startScanner() {
