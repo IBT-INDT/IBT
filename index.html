@@ -1,56 +1,125 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IBT Wallet</title>
-    <link rel="manifest" href="manifest.json">
+    <title>IBT Mesh Wallet - Decentralized Future</title>
+    <meta name="description" content="Simple, secure, and fast P2P Mesh Wallet for IBT Coin. Take control of your assets.">
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/feather-icons"></script>
     <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/gun/sea.js"></script>
-    <style>
-        body { font-family: sans-serif; background: #000; color: #fff; text-align: center; padding: 20px; }
-        .wallet-card { background: #111; padding: 30px; border-radius: 20px; border: 1px solid #333; margin-top: 20px; }
-        .bal { font-size: 3rem; color: #00ff88; font-weight: bold; }
-        input { width: 90%; padding: 15px; margin: 10px 0; border-radius: 10px; background: #222; color: #fff; border: 1px solid #444; }
-        button { width: 100%; padding: 15px; border-radius: 10px; border: none; background: #007bff; color: #fff; font-weight: bold; font-size: 1rem; }
-        #addr { font-size: 10px; color: #666; word-break: break-all; margin-top: 15px; }
-    </style>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0a0e17">
 </head>
 <body>
-    <div class="wallet-card">
-        <h2>IBT Wallet</h2>
-        <div class="bal"><span id="user-bal">0</span></div>
-        <div id="addr">Loading Wallet...</div>
-        <hr style="border:0.5px solid #222; margin: 20px 0;">
-        <input type="text" id="to" placeholder="Receiver Address">
-        <input type="number" id="amt" placeholder="Amount">
-        <button onclick="send()">SEND IBT</button>
+    <div class="dashboard">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <i data-feather="box" style="color: var(--primary);"></i>
+                <span>IBT MESH</span>
+            </div>
+            <nav>
+                <ul class="nav-links">
+                    <li class="nav-item active"><i data-feather="home"></i><span>Dashboard</span></li>
+                    <li class="nav-item"><i data-feather="repeat"></i><span>Transactions</span></li>
+                    <li class="nav-item"><i data-feather="layers"></i><span>Staking</span></li>
+                    <li class="nav-item"><i data-feather="shield"></i><span>Security</span></li>
+                </ul>
+            </nav>
+            <div style="margin-top: auto; padding-top: 2rem;">
+                <div class="user-badge" style="width: 100%; border-radius: 12px; font-size: 0.8rem;">
+                    <i data-feather="monitor"></i><span>PWA Installable</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header>
+                <div>
+                    <h1 style="font-size: 2.2rem; font-weight: 800;">My Wallet</h1>
+                    <p style="color: var(--text-dim);">Peer Status: <span style="color: var(--success);">Online</span></p>
+                </div>
+                <div class="user-badge">
+                    <span id="wallet-id-display" title="Click to copy" style="font-family: monospace; cursor: pointer;">ibt_peer_3f92...</span>
+                    <i data-feather="copy" style="width: 16px; color: var(--primary);"></i>
+                </div>
+            </header>
+
+            <!-- Card Layout -->
+            <section class="stats-grid animate">
+                <div class="card" style="background: linear-gradient(135deg, rgba(79, 172, 254, 0.1), rgba(0, 242, 254, 0.05));">
+                    <p class="card-title">Available Balance</p>
+                    <p class="card-value" id="user-balance">0.00 IBT</p>
+                    <p class="card-change up">~$0.00 USD</p>
+                </div>
+                <div class="card">
+                    <p class="card-title">Staking Rewards</p>
+                    <p class="card-value" id="staking-yield">0.00 IBT</p>
+                    <p class="card-change animate" style="color: var(--accent);">Earn 30% Net Fees</p>
+                </div>
+                <div class="card">
+                    <p class="card-title">P2P Network</p>
+                    <p class="card-value">Decentralized</p>
+                    <p class="card-change" style="color: var(--primary);">0.50% Trading Fee</p>
+                </div>
+            </section>
+
+            <!-- Action Area -->
+            <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 2rem; margin-top: 2rem;">
+                <!-- Send/Receive -->
+                <section class="card animate" style="animation-delay: 0.1s;">
+                    <div style="display: flex; gap: 10px; margin-bottom: 1.5rem;">
+                        <button class="btn btn-primary" style="flex: 1; justify-content: center;">Send</button>
+                        <button class="btn" style="flex: 1; justify-content: center; background: rgba(255, 255, 255, 0.1); color: white;">Receive</button>
+                    </div>
+                    <div class="input-group">
+                        <label>Receiver Peer ID</label>
+                        <input type="text" placeholder="Peer/Wallet Address">
+                    </div>
+                    <div class="input-group">
+                        <label>IBT Amount</label>
+                        <input type="number" placeholder="0.00">
+                    </div>
+                    <button class="btn btn-primary" style="width: 100%; justify-content: center;">
+                        <i data-feather="send"></i> Transfer IBT
+                    </button>
+                </section>
+
+                <!-- Activity -->
+                <section class="data-table-container animate" style="animation-delay: 0.2s;">
+                    <h3 style="margin-bottom: 1.5rem; display: flex; align-items: center; gap: 10px;">
+                        <i data-feather="clock" style="color: var(--accent);"></i> Recent Activity
+                    </h3>
+                    <div id="no-tx-msg" style="text-align: center; color: var(--text-dim); padding: 2rem;">
+                        <i data-feather="inbox" style="margin-bottom: 1rem; width: 40px; height: 40px; opacity: 0.3;"></i>
+                        <p>No transactions detected on the mesh.</p>
+                    </div>
+                    <table id="tx-table" style="display: none;">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Recipient</th>
+                                <th>Amount</th>
+                                <th>Fee</th>
+                            </tr>
+                        </thead>
+                        <tbody id="user-tx-tbody">
+                            <!-- Dynamic items -->
+                        </tbody>
+                    </table>
+                </section>
+            </div>
+        </main>
     </div>
 
+    <script src="script.js"></script>
     <script>
-        const gun = Gun(['https://gun-manhattan.herokuapp.com/gun']);
-        const sea = Gun.SEA;
-        let pair;
-
-        async function start() {
-            let saved = localStorage.getItem('ibt_key');
-            pair = saved ? JSON.parse(saved) : await sea.pair();
-            if(!saved) localStorage.setItem('ibt_key', JSON.stringify(pair));
-            
-            document.getElementById('addr').innerText = pair.pub;
-            gun.get('ibt_balances').get(pair.pub).on(b => document.getElementById('user-bal').innerText = b || 0);
-        }
-
-        async function send() {
-            const to = document.getElementById('to').value;
-            const amount = document.getElementById('amt').value;
-            const tx = { from: pair.pub, to, amount, time: Date.now() };
-            const sig = await sea.sign(tx, pair);
-            gun.get('ibt_network').get('transactions').set({ data: tx, sig, pub: pair.pub });
-            alert("Sent!");
-        }
-
-        if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
-        start();
+        feather.replace();
     </script>
 </body>
 </html>
